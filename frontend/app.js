@@ -76,7 +76,13 @@ function noteApp() {
         statsPluginEnabled: false,
         noteStats: null,
         statsExpanded: false,
-        
+
+        // Graph visualization state
+        showGraph: false,
+        graphData: { nodes: [], edges: [] },
+        graphLoading: false,
+        graphNetwork: null,
+
         // Sidebar resize state
         sidebarWidth: CONFIG.DEFAULT_SIDEBAR_WIDTH,
         isResizing: false,
@@ -2107,6 +2113,191 @@ function noteApp() {
             setTimeout(() => {
                 this.isScrolling = false;
             }, CONFIG.SCROLL_SYNC_DELAY);
+        },
+
+        // Open graph view
+        async openGraph() {
+            this.showGraph = true;
+            this.graphLoading = true;
+
+            // Add keyboard listener for ESC to close graph
+            const handleEscape = (e) => {
+                if (e.key === 'Escape' && this.showGraph) {
+                    this.showGraph = false;
+                    document.removeEventListener('keydown', handleEscape);
+                }
+            };
+            document.addEventListener('keydown', handleEscape);
+
+            try {
+                // Fetch graph data from API
+                const response = await fetch('/api/graph');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch graph data');
+                }
+
+                const data = await response.json();
+                this.graphData = data;
+
+                // Wait for DOM to render
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        this.renderGraph();
+                        this.graphLoading = false;
+                    }, 100);
+                });
+            } catch (error) {
+                ErrorHandler.handle('load graph', error);
+                this.graphLoading = false;
+                this.showGraph = false;
+            }
+        },
+
+        // Render the graph using vis.js
+        renderGraph() {
+            const container = document.getElementById('graph-container');
+            if (!container) {
+                console.error('Graph container not found');
+                return;
+            }
+
+            // Clear existing graph
+            if (this.graphNetwork) {
+                this.graphNetwork.destroy();
+                this.graphNetwork = null;
+            }
+
+            // Get CSS variables for theme colors
+            const styles = getComputedStyle(document.documentElement);
+            const bgPrimary = styles.getPropertyValue('--bg-primary').trim() || '#ffffff';
+            const bgSecondary = styles.getPropertyValue('--bg-secondary').trim() || '#f3f4f6';
+            const textPrimary = styles.getPropertyValue('--text-primary').trim() || '#111827';
+            const textSecondary = styles.getPropertyValue('--text-secondary').trim() || '#6b7280';
+            const accentPrimary = styles.getPropertyValue('--accent-primary').trim() || '#3b82f6';
+            const borderPrimary = styles.getPropertyValue('--border-primary').trim() || '#e5e7eb';
+
+            // Prepare nodes data
+            const nodes = new vis.DataSet(
+                this.graphData.nodes.map(node => ({
+                    id: node.id,
+                    label: node.label,
+                    title: node.label, // Tooltip
+                    color: {
+                        background: node.id === this.currentNote ? accentPrimary : bgSecondary,
+                        border: borderPrimary,
+                        highlight: {
+                            background: accentPrimary,
+                            border: accentPrimary
+                        },
+                        hover: {
+                            background: accentPrimary,
+                            border: accentPrimary
+                        }
+                    },
+                    font: {
+                        color: node.id === this.currentNote ? '#ffffff' : textPrimary,
+                        size: 14,
+                        face: 'system-ui, -apple-system, sans-serif'
+                    },
+                    borderWidth: 2,
+                    borderWidthSelected: 3,
+                    shape: 'box',
+                    margin: 10,
+                    widthConstraint: {
+                        maximum: 200
+                    }
+                }))
+            );
+
+            // Prepare edges data
+            const edges = new vis.DataSet(
+                this.graphData.edges.map(edge => ({
+                    from: edge.from,
+                    to: edge.to,
+                    arrows: 'to',
+                    color: {
+                        color: textSecondary,
+                        highlight: accentPrimary,
+                        hover: accentPrimary
+                    },
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    },
+                    width: 1.5
+                }))
+            );
+
+            // Create the network
+            const data = { nodes, edges };
+            const options = {
+                layout: {
+                    improvedLayout: true,
+                    hierarchical: false
+                },
+                physics: {
+                    enabled: true,
+                    stabilization: {
+                        enabled: true,
+                        iterations: 200,
+                        updateInterval: 25
+                    },
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.3,
+                        springLength: 95,
+                        springConstant: 0.04,
+                        damping: 0.09,
+                        avoidOverlap: 0.1
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    navigationButtons: true,
+                    keyboard: {
+                        enabled: true,
+                        bindToWindow: false
+                    },
+                    zoomView: true,
+                    dragView: true
+                },
+                nodes: {
+                    shape: 'box',
+                    size: 25,
+                    font: {
+                        size: 14
+                    }
+                },
+                edges: {
+                    width: 1.5,
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    }
+                }
+            };
+
+            // Initialize network
+            this.graphNetwork = new vis.Network(container, data, options);
+
+            // Handle node click to navigate to note
+            this.graphNetwork.on('click', (params) => {
+                if (params.nodes.length > 0) {
+                    const noteId = params.nodes[0];
+                    this.showGraph = false;
+                    this.loadNote(noteId);
+                }
+            });
+
+            // Handle double-click to fit network
+            this.graphNetwork.on('doubleClick', () => {
+                this.graphNetwork.fit({
+                    animation: {
+                        duration: 500,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            });
         }
     }
 }

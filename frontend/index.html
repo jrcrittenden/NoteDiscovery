@@ -23,6 +23,9 @@
     <!-- Highlight.js for code syntax highlighting -->
     <link rel="stylesheet" id="highlight-theme" href="">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Vis.js for graph visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/csharp.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
@@ -745,8 +748,20 @@
             
             <!-- Footer -->
             <div class="p-3 border-t" style="border-color: var(--border-primary);">
-                <div class="text-xs text-center" style="color: var(--text-tertiary);">
-                    <span x-text="notes.length"></span> notes
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-xs" style="color: var(--text-tertiary);">
+                        <span x-text="notes.length"></span> notes
+                    </div>
+                    <button
+                        @click="openGraph()"
+                        class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+                        style="background-color: var(--accent-primary); color: white;"
+                        onmouseover="this.style.backgroundColor='var(--accent-hover)'"
+                        onmouseout="this.style.backgroundColor='var(--accent-primary)'"
+                        title="View note graph"
+                    >
+                        🕸️ Graph
+                    </button>
                 </div>
             </div>
         </div>
@@ -1056,8 +1071,77 @@
             </template>
             
         </div>
+
+        <!-- Graph View Overlay -->
+        <div
+            x-show="showGraph"
+            @click.self="showGraph = false"
+            class="fixed inset-0 z-50 flex items-center justify-center"
+            style="background-color: rgba(0, 0, 0, 0.7);"
+            x-cloak
+        >
+            <div
+                class="relative w-11/12 h-5/6 rounded-lg shadow-2xl flex flex-col"
+                style="background-color: var(--bg-primary); border: 2px solid var(--border-primary);"
+                @click.stop
+            >
+                <!-- Graph Header -->
+                <div class="flex items-center justify-between px-6 py-4 border-b" style="border-color: var(--border-primary);">
+                    <div>
+                        <h2 class="text-2xl font-bold" style="color: var(--text-primary);">🕸️ Note Graph</h2>
+                        <p class="text-sm mt-1" style="color: var(--text-secondary);">
+                            Visual network of your notes and their connections
+                        </p>
+                    </div>
+                    <button
+                        @click="showGraph = false"
+                        class="p-2 rounded-lg hover:bg-opacity-80 transition-colors"
+                        style="color: var(--text-secondary);"
+                        onmouseover="this.style.backgroundColor='var(--bg-hover)'"
+                        onmouseout="this.style.backgroundColor='transparent'"
+                        title="Close graph view (Esc)"
+                    >
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Graph Container -->
+                <div class="flex-1 relative">
+                    <div id="graph-container" class="w-full h-full"></div>
+
+                    <!-- Graph Loading State -->
+                    <div
+                        x-show="graphLoading"
+                        class="absolute inset-0 flex items-center justify-center"
+                        style="background-color: var(--bg-primary);"
+                    >
+                        <div class="text-center">
+                            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-solid border-current border-r-transparent mb-4"
+                                 style="color: var(--accent-primary);"></div>
+                            <p style="color: var(--text-secondary);">Loading graph...</p>
+                        </div>
+                    </div>
+
+                    <!-- Graph Info Panel -->
+                    <div
+                        class="absolute bottom-4 left-4 px-4 py-3 rounded-lg shadow-lg"
+                        style="background-color: var(--bg-secondary); border: 1px solid var(--border-primary);"
+                    >
+                        <div class="text-sm space-y-1" style="color: var(--text-secondary);">
+                            <div><strong x-text="graphData.nodes ? graphData.nodes.length : 0"></strong> notes</div>
+                            <div><strong x-text="graphData.edges ? graphData.edges.length : 0"></strong> connections</div>
+                            <div class="text-xs mt-2 pt-2 border-t" style="border-color: var(--border-primary); color: var(--text-tertiary);">
+                                💡 Click node to open • Drag to move • Scroll to zoom
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    
+
     <script src="/static/app.js"></script>
 </body>
 </html>
