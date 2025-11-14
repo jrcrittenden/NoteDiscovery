@@ -82,6 +82,15 @@ function noteApp() {
         graphData: { nodes: [], edges: [] },
         graphLoading: false,
         graphNetwork: null,
+        graphSplitWidth: 60, // percentage for graph vs preview
+        graphPreviewOpen: false,
+        graphPreviewNote: null,
+        graphPreviewContent: null,
+        graphPreviewLoading: false,
+        isResizingGraphPreview: false,
+        expandedNodes: new Set(), // Nodes that are pinned/expanded
+        temporaryNodes: new Set(), // Nodes shown on hover
+        hoverTimeout: null, // Timeout for hover preview
 
         // Sidebar resize state
         sidebarWidth: CONFIG.DEFAULT_SIDEBAR_WIDTH,
@@ -2309,12 +2318,11 @@ function noteApp() {
             // Initialize network
             this.graphNetwork = new vis.Network(container, data, options);
 
-            // Handle node click to navigate to note
+            // Handle node click to preview or navigate
             this.graphNetwork.on('click', (params) => {
                 if (params.nodes.length > 0) {
                     const noteId = params.nodes[0];
-                    this.showGraph = false;
-                    this.loadNote(noteId);
+                    this.previewGraphNode(noteId);
                 }
             });
 
@@ -2327,6 +2335,115 @@ function noteApp() {
                     }
                 });
             });
+
+            // Handle hover to preview (if enhanced graph plugin is enabled)
+            this.graphNetwork.on('hoverNode', (params) => {
+                if (this.hoverTimeout) clearTimeout(this.hoverTimeout);
+
+                const nodeId = params.node;
+                // Show temporary preview after 300ms hover
+                this.hoverTimeout = setTimeout(() => {
+                    if (!this.expandedNodes.has(nodeId)) {
+                        this.showTemporaryChildren(nodeId);
+                    }
+                }, 300);
+            });
+
+            this.graphNetwork.on('blurNode', (params) => {
+                if (this.hoverTimeout) clearTimeout(this.hoverTimeout);
+
+                const nodeId = params.node;
+                // Remove temporary children after 500ms
+                setTimeout(() => {
+                    this.hideTemporaryChildren(nodeId);
+                }, 500);
+            });
+        },
+
+        // Preview a note in the sidebar
+        async previewGraphNode(noteId) {
+            this.graphPreviewOpen = true;
+            this.graphPreviewLoading = true;
+            this.graphPreviewNote = { path: noteId, name: noteId.replace('.md', '') };
+
+            try {
+                const response = await fetch(`/api/notes/${noteId}`);
+                if (!response.ok) throw new Error('Failed to load note');
+
+                const data = await response.json();
+
+                // Render markdown
+                const html = marked.parse(data.content);
+                this.graphPreviewContent = html;
+                this.graphPreviewNote.name = data.metadata?.name || noteId.replace('.md', '');
+
+                // Highlight code in preview after render
+                this.$nextTick(() => {
+                    document.querySelectorAll('.markdown-preview pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                });
+            } catch (error) {
+                ErrorHandler.handle('preview note', error);
+                this.graphPreviewContent = '<p style="color: var(--error);">Failed to load note preview.</p>';
+            } finally {
+                this.graphPreviewLoading = false;
+            }
+        },
+
+        // Open currently previewed note in main editor
+        openGraphPreviewInEditor() {
+            if (this.graphPreviewNote) {
+                this.showGraph = false;
+                this.loadNote(this.graphPreviewNote.path);
+            }
+        },
+
+        // Start resizing graph/preview split
+        startGraphPreviewResize(e) {
+            this.isResizingGraphPreview = true;
+            e.preventDefault();
+
+            const initialX = e.clientX;
+            const initialWidth = this.graphSplitWidth;
+            const containerWidth = e.target.parentElement.offsetWidth;
+
+            const handleMouseMove = (e) => {
+                if (!this.isResizingGraphPreview) return;
+
+                const deltaX = e.clientX - initialX;
+                const deltaPercent = (deltaX / containerWidth) * 100;
+                let newWidth = initialWidth + deltaPercent;
+
+                // Constrain between 30% and 70%
+                newWidth = Math.max(30, Math.min(70, newWidth));
+                this.graphSplitWidth = newWidth;
+
+                // Save to localStorage
+                localStorage.setItem('graphSplitWidth', newWidth.toString());
+            };
+
+            const handleMouseUp = () => {
+                this.isResizingGraphPreview = false;
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+            };
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        },
+
+        // Show temporary children on hover (placeholder for future enhancement)
+        async showTemporaryChildren(nodeId) {
+            // This will be enhanced by the plugin to fetch and display children
+            // For now, just track that we hovered
+            console.log('Hover preview:', nodeId);
+        },
+
+        // Hide temporary children when hover ends
+        hideTemporaryChildren(nodeId) {
+            // Remove any temporary preview nodes
+            console.log('Hide hover preview:', nodeId);
         }
     }
 }

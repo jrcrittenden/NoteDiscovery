@@ -199,19 +199,199 @@ class Plugin:
 
         js_code = """
 // Enhanced Graph Visualization Plugin
+// Provides hover-to-preview and click-to-pin functionality
 
-// Add enhanced graph state to noteApp
-document.addEventListener('alpine:init', () => {
+(function() {
     console.log('Enhanced Graph Plugin: Initializing...');
 
-    // Extend Alpine app with enhanced graph functionality
-    window.enhancedGraphReady = true;
+    // Wait for Alpine to be ready
+    document.addEventListener('alpine:init', () => {
+        // Store reference to the Alpine app data
+        window.enhancedGraphPlugin = {
+            enabled: true,
+            cache: new Map(), // Cache for node children
 
-    console.log('Enhanced Graph Plugin: Ready');
-});
+            // Fetch children for a node
+            async fetchNodeChildren(nodeId) {
+                if (this.cache.has(nodeId)) {
+                    return this.cache.get(nodeId);
+                }
 
-// Note: The main graph functionality is integrated via openGraph() in app.js
-// This plugin adds enhanced API endpoints that can be used by the core graph feature
+                try {
+                    const response = await fetch(`/api/plugins/enhanced_graph/graph/node/${nodeId}`);
+                    if (!response.ok) throw new Error('Failed to fetch node children');
+
+                    const data = await response.json();
+                    this.cache.set(nodeId, data);
+                    return data;
+                } catch (error) {
+                    console.error('Enhanced Graph Plugin: Failed to fetch children for', nodeId, error);
+                    return { nodes: [], edges: [] };
+                }
+            },
+
+            // Add nodes to the graph
+            addNodesToGraph(app, newNodes, newEdges, temporary = false) {
+                if (!app.graphNetwork) return;
+
+                const nodes = app.graphNetwork.body.data.nodes;
+                const edges = app.graphNetwork.body.data.edges;
+
+                // Get theme colors
+                const styles = getComputedStyle(document.documentElement);
+                const bgSecondary = styles.getPropertyValue('--bg-secondary').trim() || '#f3f4f6';
+                const textPrimary = styles.getPropertyValue('--text-primary').trim() || '#111827';
+                const textSecondary = styles.getPropertyValue('--text-secondary').trim() || '#6b7280';
+                const accentPrimary = styles.getPropertyValue('--accent-primary').trim() || '#3b82f6';
+                const borderPrimary = styles.getPropertyValue('--border-primary').trim() || '#e5e7eb';
+
+                // Add new nodes
+                newNodes.forEach(node => {
+                    if (!nodes.get(node.id)) {
+                        nodes.add({
+                            id: node.id,
+                            label: node.label,
+                            title: node.label,
+                            color: {
+                                background: temporary ? 'rgba(243, 244, 246, 0.6)' : bgSecondary,
+                                border: temporary ? textSecondary : borderPrimary,
+                                highlight: {
+                                    background: accentPrimary,
+                                    border: accentPrimary
+                                },
+                                hover: {
+                                    background: accentPrimary,
+                                    border: accentPrimary
+                                }
+                            },
+                            font: {
+                                color: textPrimary,
+                                size: temporary ? 12 : 14,
+                                face: 'system-ui, -apple-system, sans-serif'
+                            },
+                            borderWidth: temporary ? 1 : 2,
+                            borderWidthSelected: 3,
+                            shape: 'box',
+                            margin: temporary ? 5 : 10,
+                            opacity: temporary ? 0.7 : 1,
+                            widthConstraint: {
+                                maximum: 200
+                            },
+                            _temporary: temporary,
+                            _hasChildren: node.has_children || false
+                        });
+
+                        // Track temporary nodes
+                        if (temporary) {
+                            app.temporaryNodes.add(node.id);
+                        }
+                    }
+                });
+
+                // Add new edges
+                newEdges.forEach(edge => {
+                    const edgeId = `${edge.from}->${edge.to}`;
+                    if (!edges.get(edgeId)) {
+                        edges.add({
+                            id: edgeId,
+                            from: edge.from,
+                            to: edge.to,
+                            arrows: 'to',
+                            color: {
+                                color: textSecondary,
+                                highlight: accentPrimary,
+                                hover: accentPrimary
+                            },
+                            smooth: {
+                                type: 'curvedCW',
+                                roundness: 0.2
+                            },
+                            width: temporary ? 1 : 1.5,
+                            dashes: temporary ? [5, 5] : false,
+                            _temporary: temporary
+                        });
+                    }
+                });
+            },
+
+            // Remove temporary nodes
+            removeTemporaryNodes(app) {
+                if (!app.graphNetwork) return;
+
+                const nodes = app.graphNetwork.body.data.nodes;
+                const edges = app.graphNetwork.body.data.edges;
+
+                // Remove temporary nodes
+                const tempNodes = Array.from(app.temporaryNodes);
+                tempNodes.forEach(nodeId => {
+                    const node = nodes.get(nodeId);
+                    if (node && node._temporary && !app.expandedNodes.has(nodeId)) {
+                        nodes.remove(nodeId);
+                        app.temporaryNodes.delete(nodeId);
+                    }
+                });
+
+                // Remove temporary edges
+                edges.get().forEach(edge => {
+                    if (edge._temporary && !app.expandedNodes.has(edge.from)) {
+                        edges.remove(edge.id);
+                    }
+                });
+            }
+        };
+
+        console.log('Enhanced Graph Plugin: Ready');
+    });
+
+    // Override the showTemporaryChildren method
+    setTimeout(() => {
+        const checkApp = setInterval(() => {
+            const app = window.Alpine?.store?.noteApp || document.querySelector('[x-data]')?.__x?.$data;
+            if (app && window.enhancedGraphPlugin) {
+                // Override showTemporaryChildren
+                app.showTemporaryChildren = async function(nodeId) {
+                    const data = await window.enhancedGraphPlugin.fetchNodeChildren(nodeId);
+                    if (data.nodes.length > 0) {
+                        window.enhancedGraphPlugin.addNodesToGraph(this, data.nodes, data.edges, true);
+                    }
+                };
+
+                // Override hideTemporaryChildren
+                app.hideTemporaryChildren = function(nodeId) {
+                    window.enhancedGraphPlugin.removeTemporaryNodes(this);
+                };
+
+                // Add click-to-pin functionality
+                const originalClickHandler = app.graphNetwork?.on;
+                if (app.graphNetwork) {
+                    app.graphNetwork.on('click', async (params) => {
+                        if (params.nodes.length > 0) {
+                            const nodeId = params.nodes[0];
+
+                            // If node is already expanded, collapse it
+                            if (app.expandedNodes.has(nodeId)) {
+                                app.expandedNodes.delete(nodeId);
+                                window.enhancedGraphPlugin.removeTemporaryNodes(app);
+                            } else {
+                                // Expand node (pin children)
+                                const data = await window.enhancedGraphPlugin.fetchNodeChildren(nodeId);
+                                if (data.nodes.length > 0) {
+                                    window.enhancedGraphPlugin.addNodesToGraph(app, data.nodes, data.edges, false);
+                                    app.expandedNodes.add(nodeId);
+                                }
+                            }
+
+                            // Also show preview
+                            app.previewGraphNode(nodeId);
+                        }
+                    });
+                }
+
+                clearInterval(checkApp);
+            }
+        }, 100);
+    }, 500);
+})();
 """
 
         css_code = """
@@ -223,22 +403,37 @@ document.addEventListener('alpine:init', () => {
     border-width: 3px !important;
 }
 
-/* Expandable node indicator */
-.graph-node-expandable::after {
-    content: '+';
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    background: var(--accent-primary);
-    color: white;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    font-weight: bold;
+/* Temporary nodes (hover preview) */
+.vis-network .vis-node.temporary {
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+/* Smooth transitions for graph changes */
+.vis-network {
+    transition: all 0.3s ease;
+}
+
+/* Preview pane animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.graph-preview-pane {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Resize handle hover effect */
+.graph-preview-resize-handle:hover {
+    background-color: var(--accent-primary) !important;
+    transition: background-color 0.2s ease;
 }
 """
 
