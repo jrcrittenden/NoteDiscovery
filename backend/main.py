@@ -64,6 +64,11 @@ plugin_manager = PluginManager(config['storage']['plugins_dir'])
 # Run app startup hooks
 plugin_manager.run_hook('on_app_startup')
 
+# Register plugin API routes
+for prefix, router in plugin_manager.plugin_routers:
+    app.include_router(router, prefix=prefix)
+    print(f"Mounted plugin routes at {prefix}")
+
 # Mount static files
 static_path = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
@@ -557,12 +562,39 @@ async def toggle_plugin(plugin_name: str, enabled: dict):
             plugin_manager.enable_plugin(plugin_name)
         else:
             plugin_manager.disable_plugin(plugin_name)
-        
+
+        # Re-register routes after toggle
+        for prefix, router in plugin_manager.plugin_routers:
+            app.include_router(router, prefix=prefix)
+
         return {
             "success": True,
             "plugin": plugin_name,
             "enabled": is_enabled
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/plugins/assets")
+async def get_plugin_assets():
+    """Get frontend assets (JS/CSS) from all enabled plugins"""
+    try:
+        assets = plugin_manager.get_frontend_assets()
+        return {
+            "js": assets.get('js', ''),
+            "css": assets.get('css', '')
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/plugins/ui_components")
+async def get_plugin_ui_components():
+    """Get UI components from all enabled plugins"""
+    try:
+        components = plugin_manager.get_ui_components()
+        return {"components": components}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

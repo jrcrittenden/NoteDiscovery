@@ -105,6 +105,7 @@ function noteApp() {
             await this.initTheme();
             await this.loadNotes();
             await this.checkStatsPlugin();
+            await this.loadPluginAssets();
             this.loadSidebarWidth();
             this.loadEditorWidth();
             this.loadViewMode();
@@ -1878,7 +1879,7 @@ function noteApp() {
                 const data = await response.json();
                 const statsPlugin = data.plugins.find(p => p.id === 'note_stats');
                 this.statsPluginEnabled = statsPlugin && statsPlugin.enabled;
-                
+
                 // Calculate stats for current note if enabled
                 if (this.statsPluginEnabled && this.noteContent) {
                     this.calculateStats();
@@ -1888,7 +1889,35 @@ function noteApp() {
                 this.statsPluginEnabled = false;
             }
         },
-        
+
+        // Load and inject plugin assets (JS/CSS)
+        async loadPluginAssets() {
+            try {
+                const response = await fetch('/api/plugins/assets');
+                if (!response.ok) return;
+
+                const assets = await response.json();
+
+                // Inject CSS
+                if (assets.css) {
+                    const styleEl = document.createElement('style');
+                    styleEl.id = 'plugin-styles';
+                    styleEl.textContent = assets.css;
+                    document.head.appendChild(styleEl);
+                }
+
+                // Inject JavaScript
+                if (assets.js) {
+                    const scriptEl = document.createElement('script');
+                    scriptEl.id = 'plugin-scripts';
+                    scriptEl.textContent = assets.js;
+                    document.body.appendChild(scriptEl);
+                }
+            } catch (error) {
+                console.error('Failed to load plugin assets:', error);
+            }
+        },
+
         // Calculate note statistics (client-side)
         calculateStats() {
             if (!this.statsPluginEnabled || !this.noteContent) {

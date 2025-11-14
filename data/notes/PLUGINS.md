@@ -119,6 +119,107 @@ curl http://localhost:8000/api/plugins
 
 Plugin states (enabled/disabled) are saved in `plugins/plugin_config.json` and persist between restarts.
 
+## Advanced Plugin Features
+
+### Frontend Assets (JavaScript & CSS)
+
+Plugins can inject custom JavaScript and CSS into the frontend by implementing `get_frontend_assets()`:
+
+```python
+def get_frontend_assets(self) -> Dict[str, str]:
+    """Return frontend assets to inject"""
+    js_code = """
+    // Your JavaScript code
+    console.log('Plugin loaded!');
+    """
+
+    css_code = """
+    /* Your CSS styles */
+    .my-plugin-class {
+        color: var(--accent-primary);
+    }
+    """
+
+    return {'js': js_code, 'css': css_code}
+```
+
+**Use cases:**
+- Add custom UI interactions
+- Inject visualization libraries
+- Apply custom styling
+- Extend Alpine.js functionality
+
+### Custom API Endpoints
+
+Plugins can register custom API routes using FastAPI routers:
+
+```python
+from fastapi import APIRouter
+
+def get_api_router(self) -> APIRouter:
+    """Return custom API routes"""
+    router = APIRouter()
+
+    @router.get("/custom-endpoint")
+    async def my_endpoint():
+        return {"message": "Hello from plugin!"}
+
+    @router.post("/process-data")
+    async def process_data(data: dict):
+        # Your processing logic
+        return {"result": "processed"}
+
+    return router
+```
+
+Routes are automatically prefixed with `/api/plugins/{plugin_name}/`.
+
+**Example:** If your plugin is `my_plugin.py`, the endpoint becomes:
+- `/api/plugins/my_plugin/custom-endpoint`
+- `/api/plugins/my_plugin/process-data`
+
+### UI Components
+
+Plugins can inject UI components into specific locations:
+
+```python
+def get_ui_components(self) -> List[Dict]:
+    """Return UI components to inject"""
+    return [
+        {
+            'type': 'button',
+            'location': 'sidebar_footer',
+            'html': '<button onclick="myPluginFunction()">My Action</button>'
+        }
+    ]
+```
+
+## Built-in Plugins
+
+### Enhanced Graph Visualization
+
+**File:** `plugins/enhanced_graph.py`
+
+Provides advanced graph visualization with:
+- **Hierarchical data** - Top-level nodes with lazy-loaded children
+- **Enhanced API endpoints** - `/api/plugins/enhanced_graph/graph/enhanced`
+- **Lazy loading** - Load node children on demand via `/api/plugins/enhanced_graph/graph/node/{path}`
+
+**API Usage:**
+```bash
+# Get hierarchical graph with depth=2
+curl http://localhost:8000/api/plugins/enhanced_graph/graph/enhanced?depth=2
+
+# Get children of a specific note
+curl http://localhost:8000/api/plugins/enhanced_graph/graph/node/MyNote.md
+```
+
+**Features:**
+- Hierarchical graph structure
+- Top-level node detection (root notes, hub notes)
+- Link count and child indicators
+- Depth-based loading for performance
+
 ---
 
 💡 **Tip:** Use `print()` statements in plugins to log to Docker logs for debugging and monitoring!
