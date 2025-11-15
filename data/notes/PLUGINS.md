@@ -17,6 +17,29 @@ Plugins are Python files that live in the `plugins/` directory. They use **event
 | `on_search` | Search is performed | `query`, `results` | ❌ No |
 | `on_app_startup` | App starts up | None | ❌ No |
 
+## ⚠️ Security Warning
+
+**IMPORTANT:** Only install plugins from trusted sources.
+
+Plugins have extensive access to your NoteDiscovery instance:
+- **Backend access**: Full file system access, can read/write/delete notes
+- **Frontend access**: Can inject JavaScript and CSS into your browser session
+- **API access**: Can create custom API endpoints with no sandboxing
+- **Data access**: Can access all note content, metadata, and user data
+
+**Risks of malicious plugins:**
+- Data theft (exfiltrate notes to external servers)
+- Code injection (XSS attacks via frontend assets)
+- File system manipulation (delete or corrupt notes)
+- Privacy violations (track user activity, keylogging)
+
+**Best practices:**
+1. Only install plugins you have personally reviewed
+2. Check plugin source code before enabling
+3. Disable plugins you don't actively use
+4. Monitor Docker logs for suspicious plugin activity
+5. Keep plugin permissions in mind when exposing to the internet
+
 ## Creating a Plugin
 
 ### 1. Create a Python file

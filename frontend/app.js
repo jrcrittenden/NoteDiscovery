@@ -1636,7 +1636,10 @@ function noteApp() {
             
             // Parse markdown
             let html = marked.parse(content);
-            
+
+            // Sanitize HTML to prevent XSS attacks
+            html = DOMPurify.sanitize(html);
+
             // Post-process: Add target="_blank" to external links
             // Parse as DOM to safely manipulate
             const tempDiv = document.createElement('div');
@@ -2372,8 +2375,9 @@ function noteApp() {
 
                 const data = await response.json();
 
-                // Render markdown
-                const html = marked.parse(data.content);
+                // Render markdown and sanitize to prevent XSS
+                let html = marked.parse(data.content);
+                html = DOMPurify.sanitize(html);
                 this.graphPreviewContent = html;
                 this.graphPreviewNote.name = data.metadata?.name || noteId.replace('.md', '');
 

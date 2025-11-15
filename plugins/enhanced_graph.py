@@ -202,7 +202,8 @@ class Plugin:
 // Provides hover-to-preview and click-to-pin functionality
 
 (function() {
-    console.log('Enhanced Graph Plugin: Initializing...');
+    try {
+        console.log('Enhanced Graph Plugin: Initializing...');
 
     // Wait for Alpine to be ready
     document.addEventListener('alpine:init', () => {
@@ -345,52 +346,76 @@ class Plugin:
 
     // Override the showTemporaryChildren method
     setTimeout(() => {
+        let attempts = 0;
+        const maxAttempts = 50; // 5 seconds max (50 * 100ms)
+
         const checkApp = setInterval(() => {
+            attempts++;
             const app = window.Alpine?.store?.noteApp || document.querySelector('[x-data]')?.__x?.$data;
+
             if (app && window.enhancedGraphPlugin) {
-                // Override showTemporaryChildren
-                app.showTemporaryChildren = async function(nodeId) {
-                    const data = await window.enhancedGraphPlugin.fetchNodeChildren(nodeId);
-                    if (data.nodes.length > 0) {
-                        window.enhancedGraphPlugin.addNodesToGraph(this, data.nodes, data.edges, true);
-                    }
-                };
-
-                // Override hideTemporaryChildren
-                app.hideTemporaryChildren = function(nodeId) {
-                    window.enhancedGraphPlugin.removeTemporaryNodes(this);
-                };
-
-                // Add click-to-pin functionality
-                const originalClickHandler = app.graphNetwork?.on;
-                if (app.graphNetwork) {
-                    app.graphNetwork.on('click', async (params) => {
-                        if (params.nodes.length > 0) {
-                            const nodeId = params.nodes[0];
-
-                            // If node is already expanded, collapse it
-                            if (app.expandedNodes.has(nodeId)) {
-                                app.expandedNodes.delete(nodeId);
-                                window.enhancedGraphPlugin.removeTemporaryNodes(app);
-                            } else {
-                                // Expand node (pin children)
-                                const data = await window.enhancedGraphPlugin.fetchNodeChildren(nodeId);
-                                if (data.nodes.length > 0) {
-                                    window.enhancedGraphPlugin.addNodesToGraph(app, data.nodes, data.edges, false);
-                                    app.expandedNodes.add(nodeId);
-                                }
-                            }
-
-                            // Also show preview
-                            app.previewGraphNode(nodeId);
+                try {
+                    // Override showTemporaryChildren
+                    app.showTemporaryChildren = async function(nodeId) {
+                        const data = await window.enhancedGraphPlugin.fetchNodeChildren(nodeId);
+                        if (data.nodes.length > 0) {
+                            window.enhancedGraphPlugin.addNodesToGraph(this, data.nodes, data.edges, true);
                         }
-                    });
-                }
+                    };
 
+                    // Override hideTemporaryChildren
+                    app.hideTemporaryChildren = function(nodeId) {
+                        window.enhancedGraphPlugin.removeTemporaryNodes(this);
+                    };
+
+                    // Add click-to-pin functionality
+                    if (app.graphNetwork) {
+                        // Remove existing handler to prevent duplicates (if any)
+                        if (window.enhancedGraphPlugin.clickHandler) {
+                            app.graphNetwork.off('click', window.enhancedGraphPlugin.clickHandler);
+                        }
+
+                        // Create and store the click handler
+                        window.enhancedGraphPlugin.clickHandler = async (params) => {
+                            if (params.nodes.length > 0) {
+                                const nodeId = params.nodes[0];
+
+                                // If node is already expanded, collapse it
+                                if (app.expandedNodes.has(nodeId)) {
+                                    app.expandedNodes.delete(nodeId);
+                                    window.enhancedGraphPlugin.removeTemporaryNodes(app);
+                                } else {
+                                    // Expand node (pin children)
+                                    const data = await window.enhancedGraphPlugin.fetchNodeChildren(nodeId);
+                                    if (data.nodes.length > 0) {
+                                        window.enhancedGraphPlugin.addNodesToGraph(app, data.nodes, data.edges, false);
+                                        app.expandedNodes.add(nodeId);
+                                    }
+                                }
+
+                                // Also show preview
+                                app.previewGraphNode(nodeId);
+                            }
+                        };
+
+                        app.graphNetwork.on('click', window.enhancedGraphPlugin.clickHandler);
+                    }
+
+                    console.log('Enhanced Graph Plugin: Successfully initialized');
+                    clearInterval(checkApp);
+                } catch (error) {
+                    console.error('Enhanced Graph Plugin: Initialization error', error);
+                    clearInterval(checkApp);
+                }
+            } else if (attempts >= maxAttempts) {
+                console.warn('Enhanced Graph Plugin: Failed to initialize after 5 seconds. Alpine.js may not be loaded.');
                 clearInterval(checkApp);
             }
         }, 100);
     }, 500);
+    } catch (error) {
+        console.error('Enhanced Graph Plugin: Fatal error during initialization', error);
+    }
 })();
 """
 
