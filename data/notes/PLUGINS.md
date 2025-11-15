@@ -17,6 +17,29 @@ Plugins are Python files that live in the `plugins/` directory. They use **event
 | `on_search` | Search is performed | `query`, `results` | ❌ No |
 | `on_app_startup` | App starts up | None | ❌ No |
 
+## ⚠️ Security Warning
+
+**IMPORTANT:** Only install plugins from trusted sources.
+
+Plugins have extensive access to your NoteDiscovery instance:
+- **Backend access**: Full file system access, can read/write/delete notes
+- **Frontend access**: Can inject JavaScript and CSS into your browser session
+- **API access**: Can create custom API endpoints with no sandboxing
+- **Data access**: Can access all note content, metadata, and user data
+
+**Risks of malicious plugins:**
+- Data theft (exfiltrate notes to external servers)
+- Code injection (XSS attacks via frontend assets)
+- File system manipulation (delete or corrupt notes)
+- Privacy violations (track user activity, keylogging)
+
+**Best practices:**
+1. Only install plugins you have personally reviewed
+2. Check plugin source code before enabling
+3. Disable plugins you don't actively use
+4. Monitor Docker logs for suspicious plugin activity
+5. Keep plugin permissions in mind when exposing to the internet
+
 ## Creating a Plugin
 
 ### 1. Create a Python file
@@ -118,6 +141,107 @@ curl http://localhost:8000/api/plugins
 ## Plugin State Persistence
 
 Plugin states (enabled/disabled) are saved in `plugins/plugin_config.json` and persist between restarts.
+
+## Advanced Plugin Features
+
+### Frontend Assets (JavaScript & CSS)
+
+Plugins can inject custom JavaScript and CSS into the frontend by implementing `get_frontend_assets()`:
+
+```python
+def get_frontend_assets(self) -> Dict[str, str]:
+    """Return frontend assets to inject"""
+    js_code = """
+    // Your JavaScript code
+    console.log('Plugin loaded!');
+    """
+
+    css_code = """
+    /* Your CSS styles */
+    .my-plugin-class {
+        color: var(--accent-primary);
+    }
+    """
+
+    return {'js': js_code, 'css': css_code}
+```
+
+**Use cases:**
+- Add custom UI interactions
+- Inject visualization libraries
+- Apply custom styling
+- Extend Alpine.js functionality
+
+### Custom API Endpoints
+
+Plugins can register custom API routes using FastAPI routers:
+
+```python
+from fastapi import APIRouter
+
+def get_api_router(self) -> APIRouter:
+    """Return custom API routes"""
+    router = APIRouter()
+
+    @router.get("/custom-endpoint")
+    async def my_endpoint():
+        return {"message": "Hello from plugin!"}
+
+    @router.post("/process-data")
+    async def process_data(data: dict):
+        # Your processing logic
+        return {"result": "processed"}
+
+    return router
+```
+
+Routes are automatically prefixed with `/api/plugins/{plugin_name}/`.
+
+**Example:** If your plugin is `my_plugin.py`, the endpoint becomes:
+- `/api/plugins/my_plugin/custom-endpoint`
+- `/api/plugins/my_plugin/process-data`
+
+### UI Components
+
+Plugins can inject UI components into specific locations:
+
+```python
+def get_ui_components(self) -> List[Dict]:
+    """Return UI components to inject"""
+    return [
+        {
+            'type': 'button',
+            'location': 'sidebar_footer',
+            'html': '<button onclick="myPluginFunction()">My Action</button>'
+        }
+    ]
+```
+
+## Built-in Plugins
+
+### Enhanced Graph Visualization
+
+**File:** `plugins/enhanced_graph.py`
+
+Provides advanced graph visualization with:
+- **Hierarchical data** - Top-level nodes with lazy-loaded children
+- **Enhanced API endpoints** - `/api/plugins/enhanced_graph/graph/enhanced`
+- **Lazy loading** - Load node children on demand via `/api/plugins/enhanced_graph/graph/node/{path}`
+
+**API Usage:**
+```bash
+# Get hierarchical graph with depth=2
+curl http://localhost:8000/api/plugins/enhanced_graph/graph/enhanced?depth=2
+
+# Get children of a specific note
+curl http://localhost:8000/api/plugins/enhanced_graph/graph/node/MyNote.md
+```
+
+**Features:**
+- Hierarchical graph structure
+- Top-level node detection (root notes, hub notes)
+- Link count and child indicators
+- Depth-based loading for performance
 
 ---
 

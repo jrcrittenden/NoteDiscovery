@@ -76,7 +76,22 @@ function noteApp() {
         statsPluginEnabled: false,
         noteStats: null,
         statsExpanded: false,
-        
+
+        // Graph visualization state
+        showGraph: false,
+        graphData: { nodes: [], edges: [] },
+        graphLoading: false,
+        graphNetwork: null,
+        graphSplitWidth: 60, // percentage for graph vs preview
+        graphPreviewOpen: false,
+        graphPreviewNote: null,
+        graphPreviewContent: null,
+        graphPreviewLoading: false,
+        isResizingGraphPreview: false,
+        expandedNodes: new Set(), // Nodes that are pinned/expanded
+        temporaryNodes: new Set(), // Nodes shown on hover
+        hoverTimeout: null, // Timeout for hover preview
+
         // Sidebar resize state
         sidebarWidth: CONFIG.DEFAULT_SIDEBAR_WIDTH,
         isResizing: false,
@@ -99,6 +114,7 @@ function noteApp() {
             await this.initTheme();
             await this.loadNotes();
             await this.checkStatsPlugin();
+            await this.loadPluginAssets();
             this.loadSidebarWidth();
             this.loadEditorWidth();
             this.loadViewMode();
@@ -1620,7 +1636,10 @@ function noteApp() {
             
             // Parse markdown
             let html = marked.parse(content);
-            
+
+            // Sanitize HTML to prevent XSS attacks
+            html = DOMPurify.sanitize(html);
+
             // Post-process: Add target="_blank" to external links
             // Parse as DOM to safely manipulate
             const tempDiv = document.createElement('div');
@@ -1872,7 +1891,7 @@ function noteApp() {
                 const data = await response.json();
                 const statsPlugin = data.plugins.find(p => p.id === 'note_stats');
                 this.statsPluginEnabled = statsPlugin && statsPlugin.enabled;
-                
+
                 // Calculate stats for current note if enabled
                 if (this.statsPluginEnabled && this.noteContent) {
                     this.calculateStats();
@@ -1882,7 +1901,35 @@ function noteApp() {
                 this.statsPluginEnabled = false;
             }
         },
-        
+
+        // Load and inject plugin assets (JS/CSS)
+        async loadPluginAssets() {
+            try {
+                const response = await fetch('/api/plugins/assets');
+                if (!response.ok) return;
+
+                const assets = await response.json();
+
+                // Inject CSS
+                if (assets.css) {
+                    const styleEl = document.createElement('style');
+                    styleEl.id = 'plugin-styles';
+                    styleEl.textContent = assets.css;
+                    document.head.appendChild(styleEl);
+                }
+
+                // Inject JavaScript
+                if (assets.js) {
+                    const scriptEl = document.createElement('script');
+                    scriptEl.id = 'plugin-scripts';
+                    scriptEl.textContent = assets.js;
+                    document.body.appendChild(scriptEl);
+                }
+            } catch (error) {
+                console.error('Failed to load plugin assets:', error);
+            }
+        },
+
         // Calculate note statistics (client-side)
         calculateStats() {
             if (!this.statsPluginEnabled || !this.noteContent) {
@@ -2107,6 +2154,300 @@ function noteApp() {
             setTimeout(() => {
                 this.isScrolling = false;
             }, CONFIG.SCROLL_SYNC_DELAY);
+        },
+
+        // Open graph view
+        async openGraph() {
+            this.showGraph = true;
+            this.graphLoading = true;
+
+            // Add keyboard listener for ESC to close graph
+            const handleEscape = (e) => {
+                if (e.key === 'Escape' && this.showGraph) {
+                    this.showGraph = false;
+                    document.removeEventListener('keydown', handleEscape);
+                }
+            };
+            document.addEventListener('keydown', handleEscape);
+
+            try {
+                // Fetch graph data from API
+                const response = await fetch('/api/graph');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch graph data');
+                }
+
+                const data = await response.json();
+                this.graphData = data;
+
+                // Wait for DOM to render
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        this.renderGraph();
+                        this.graphLoading = false;
+                    }, 100);
+                });
+            } catch (error) {
+                ErrorHandler.handle('load graph', error);
+                this.graphLoading = false;
+                this.showGraph = false;
+            }
+        },
+
+        // Render the graph using vis.js
+        renderGraph() {
+            const container = document.getElementById('graph-container');
+            if (!container) {
+                console.error('Graph container not found');
+                return;
+            }
+
+            // Clear existing graph
+            if (this.graphNetwork) {
+                this.graphNetwork.destroy();
+                this.graphNetwork = null;
+            }
+
+            // Get CSS variables for theme colors
+            const styles = getComputedStyle(document.documentElement);
+            const bgPrimary = styles.getPropertyValue('--bg-primary').trim() || '#ffffff';
+            const bgSecondary = styles.getPropertyValue('--bg-secondary').trim() || '#f3f4f6';
+            const textPrimary = styles.getPropertyValue('--text-primary').trim() || '#111827';
+            const textSecondary = styles.getPropertyValue('--text-secondary').trim() || '#6b7280';
+            const accentPrimary = styles.getPropertyValue('--accent-primary').trim() || '#3b82f6';
+            const borderPrimary = styles.getPropertyValue('--border-primary').trim() || '#e5e7eb';
+
+            // Prepare nodes data
+            const nodes = new vis.DataSet(
+                this.graphData.nodes.map(node => ({
+                    id: node.id,
+                    label: node.label,
+                    title: node.label, // Tooltip
+                    color: {
+                        background: node.id === this.currentNote ? accentPrimary : bgSecondary,
+                        border: borderPrimary,
+                        highlight: {
+                            background: accentPrimary,
+                            border: accentPrimary
+                        },
+                        hover: {
+                            background: accentPrimary,
+                            border: accentPrimary
+                        }
+                    },
+                    font: {
+                        color: node.id === this.currentNote ? '#ffffff' : textPrimary,
+                        size: 14,
+                        face: 'system-ui, -apple-system, sans-serif'
+                    },
+                    borderWidth: 2,
+                    borderWidthSelected: 3,
+                    shape: 'box',
+                    margin: 10,
+                    widthConstraint: {
+                        maximum: 200
+                    }
+                }))
+            );
+
+            // Prepare edges data
+            const edges = new vis.DataSet(
+                this.graphData.edges.map(edge => ({
+                    from: edge.from,
+                    to: edge.to,
+                    arrows: 'to',
+                    color: {
+                        color: textSecondary,
+                        highlight: accentPrimary,
+                        hover: accentPrimary
+                    },
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    },
+                    width: 1.5
+                }))
+            );
+
+            // Create the network
+            const data = { nodes, edges };
+            const options = {
+                layout: {
+                    improvedLayout: true,
+                    hierarchical: false
+                },
+                physics: {
+                    enabled: true,
+                    stabilization: {
+                        enabled: true,
+                        iterations: 200,
+                        updateInterval: 25
+                    },
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.3,
+                        springLength: 95,
+                        springConstant: 0.04,
+                        damping: 0.09,
+                        avoidOverlap: 0.1
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    navigationButtons: true,
+                    keyboard: {
+                        enabled: true,
+                        bindToWindow: false
+                    },
+                    zoomView: true,
+                    dragView: true
+                },
+                nodes: {
+                    shape: 'box',
+                    size: 25,
+                    font: {
+                        size: 14
+                    }
+                },
+                edges: {
+                    width: 1.5,
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    }
+                }
+            };
+
+            // Initialize network
+            this.graphNetwork = new vis.Network(container, data, options);
+
+            // Handle node click to preview or navigate
+            this.graphNetwork.on('click', (params) => {
+                if (params.nodes.length > 0) {
+                    const noteId = params.nodes[0];
+                    this.previewGraphNode(noteId);
+                }
+            });
+
+            // Handle double-click to fit network
+            this.graphNetwork.on('doubleClick', () => {
+                this.graphNetwork.fit({
+                    animation: {
+                        duration: 500,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            });
+
+            // Handle hover to preview (if enhanced graph plugin is enabled)
+            this.graphNetwork.on('hoverNode', (params) => {
+                if (this.hoverTimeout) clearTimeout(this.hoverTimeout);
+
+                const nodeId = params.node;
+                // Show temporary preview after 300ms hover
+                this.hoverTimeout = setTimeout(() => {
+                    if (!this.expandedNodes.has(nodeId)) {
+                        this.showTemporaryChildren(nodeId);
+                    }
+                }, 300);
+            });
+
+            this.graphNetwork.on('blurNode', (params) => {
+                if (this.hoverTimeout) clearTimeout(this.hoverTimeout);
+
+                const nodeId = params.node;
+                // Remove temporary children after 500ms
+                setTimeout(() => {
+                    this.hideTemporaryChildren(nodeId);
+                }, 500);
+            });
+        },
+
+        // Preview a note in the sidebar
+        async previewGraphNode(noteId) {
+            this.graphPreviewOpen = true;
+            this.graphPreviewLoading = true;
+            this.graphPreviewNote = { path: noteId, name: noteId.replace('.md', '') };
+
+            try {
+                const response = await fetch(`/api/notes/${noteId}`);
+                if (!response.ok) throw new Error('Failed to load note');
+
+                const data = await response.json();
+
+                // Render markdown and sanitize to prevent XSS
+                let html = marked.parse(data.content);
+                html = DOMPurify.sanitize(html);
+                this.graphPreviewContent = html;
+                this.graphPreviewNote.name = data.metadata?.name || noteId.replace('.md', '');
+
+                // Highlight code in preview after render
+                this.$nextTick(() => {
+                    document.querySelectorAll('.markdown-preview pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                });
+            } catch (error) {
+                ErrorHandler.handle('preview note', error);
+                this.graphPreviewContent = '<p style="color: var(--error);">Failed to load note preview.</p>';
+            } finally {
+                this.graphPreviewLoading = false;
+            }
+        },
+
+        // Open currently previewed note in main editor
+        openGraphPreviewInEditor() {
+            if (this.graphPreviewNote) {
+                this.showGraph = false;
+                this.loadNote(this.graphPreviewNote.path);
+            }
+        },
+
+        // Start resizing graph/preview split
+        startGraphPreviewResize(e) {
+            this.isResizingGraphPreview = true;
+            e.preventDefault();
+
+            const initialX = e.clientX;
+            const initialWidth = this.graphSplitWidth;
+            const containerWidth = e.target.parentElement.offsetWidth;
+
+            const handleMouseMove = (e) => {
+                if (!this.isResizingGraphPreview) return;
+
+                const deltaX = e.clientX - initialX;
+                const deltaPercent = (deltaX / containerWidth) * 100;
+                let newWidth = initialWidth + deltaPercent;
+
+                // Constrain between 30% and 70%
+                newWidth = Math.max(30, Math.min(70, newWidth));
+                this.graphSplitWidth = newWidth;
+
+                // Save to localStorage
+                localStorage.setItem('graphSplitWidth', newWidth.toString());
+            };
+
+            const handleMouseUp = () => {
+                this.isResizingGraphPreview = false;
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+            };
+
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        },
+
+        // Show temporary children on hover (placeholder for future enhancement)
+        async showTemporaryChildren(nodeId) {
+            // This will be enhanced by the plugin to fetch and display children
+            // For now, just track that we hovered
+            console.log('Hover preview:', nodeId);
+        },
+
+        // Hide temporary children when hover ends
+        hideTemporaryChildren(nodeId) {
+            // Remove any temporary preview nodes
+            console.log('Hide hover preview:', nodeId);
         }
     }
 }

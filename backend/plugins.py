@@ -7,16 +7,18 @@ import os
 import json
 import importlib.util
 from pathlib import Path
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Optional, Tuple
+from fastapi import APIRouter
 
 
 class Plugin:
     """Base plugin class"""
-    
+
     def __init__(self):
         self.name = "Base Plugin"
         self.version = "1.0.0"
         self.enabled = False
+        self.plugin_dir = None  # Will be set by PluginManager
     
     def on_note_save(self, note_path: str, content: str) -> str | None:
         """
@@ -75,6 +77,35 @@ class Plugin:
         """
         pass
 
+    def get_frontend_assets(self) -> Dict[str, str]:
+        """
+        Return frontend assets (JavaScript, CSS) to inject into the UI.
+
+        Returns:
+            Dict with 'js' and 'css' keys containing code strings
+            Example: {'js': 'console.log("Plugin loaded");', 'css': '.my-class { color: red; }'}
+        """
+        return {}
+
+    def get_api_router(self) -> Optional[APIRouter]:
+        """
+        Return a FastAPI APIRouter with custom endpoints.
+
+        Returns:
+            APIRouter instance or None
+        """
+        return None
+
+    def get_ui_components(self) -> List[Dict]:
+        """
+        Return UI components to inject into the interface.
+
+        Returns:
+            List of component definitions
+            Example: [{'type': 'button', 'location': 'sidebar_footer', 'html': '...'}]
+        """
+        return []
+
 
 class PluginManager:
     """Manages loading and execution of plugins"""
@@ -82,9 +113,11 @@ class PluginManager:
     def __init__(self, plugins_dir: str):
         self.plugins_dir = Path(plugins_dir)
         self.plugins: Dict[str, Plugin] = {}
+        self.plugin_routers: List[Tuple[str, APIRouter]] = []  # List of (prefix, router)
         self.config_file = self.plugins_dir / "plugin_config.json"
         self.load_plugins()
         self._apply_saved_state()
+        self._register_plugin_routes()
         # Save config to create/update the file with current states
         if self.plugins:  # Only save if there are plugins loaded
             self._save_config()
@@ -107,10 +140,11 @@ class PluginManager:
                 if spec and spec.loader:
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
-                    
+
                     # Look for Plugin class in module
                     if hasattr(module, 'Plugin'):
                         plugin = module.Plugin()
+                        plugin.plugin_dir = plugin_file.parent  # Set plugin directory
                         self.plugins[plugin_file.stem] = plugin
             except Exception as e:
                 print(f"Failed to load plugin {plugin_file.stem}: {e}")
@@ -270,5 +304,53 @@ class Plugin:
         
         # Return the final modified value
         return kwargs.get('initial_content', '')
-    
+
+    def _register_plugin_routes(self):
+        """Register API routes from all enabled plugins"""
+        self.plugin_routers = []
+        for plugin_id, plugin in self.plugins.items():
+            if plugin.enabled:
+                router = plugin.get_api_router()
+                if router:
+                    # Prefix plugin routes with /api/plugins/{plugin_id}
+                    prefix = f"/api/plugins/{plugin_id}"
+                    self.plugin_routers.append((prefix, router))
+                    print(f"Registered API routes for plugin '{plugin_id}' at {prefix}")
+
+    def get_frontend_assets(self) -> Dict[str, str]:
+        """
+        Collect frontend assets from all enabled plugins.
+
+        Returns:
+            Dict with 'js' and 'css' keys containing concatenated code
+        """
+        js_parts = []
+        css_parts = []
+
+        for plugin_id, plugin in self.plugins.items():
+            if plugin.enabled:
+                assets = plugin.get_frontend_assets()
+                if assets.get('js'):
+                    js_parts.append(f"// Plugin: {plugin_id}\n{assets['js']}\n")
+                if assets.get('css'):
+                    css_parts.append(f"/* Plugin: {plugin_id} */\n{assets['css']}\n")
+
+        return {
+            'js': '\n'.join(js_parts),
+            'css': '\n'.join(css_parts)
+        }
+
+    def get_ui_components(self) -> List[Dict]:
+        """
+        Collect UI components from all enabled plugins.
+
+        Returns:
+            List of component definitions
+        """
+        components = []
+        for plugin in self.plugins.values():
+            if plugin.enabled:
+                components.extend(plugin.get_ui_components())
+        return components
+
 

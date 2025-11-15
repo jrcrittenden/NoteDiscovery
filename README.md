@@ -36,6 +36,7 @@ NoteDiscovery is a **lightweight, self-hosted note-taking application** that put
 - 🚀 **Fast & Lightweight** - Instant search and navigation
 - 🎨 **Beautiful Themes** - Multiple themes, easy to customize
 - 🔌 **Extensible** - Plugin system for custom features
+- 🕸️ **Graph Visualization** - Interactive network view of note connections
 - 📱 **Responsive** - Works on desktop, tablet, and mobile
 - 📂 **Simple Storage** - Plain markdown files in folders
 
@@ -196,6 +197,7 @@ Once you've started NoteDiscovery, you'll find comprehensive guides on:
 - 🎨 **THEMES.md** - Theme customization and creating custom themes
 - ✨ **FEATURES.md** - Complete feature list and keyboard shortcuts
 - 🔌 **PLUGINS.md** - Plugin system and available plugins
+- 🕸️ **GRAPH.md** - Graph visualization and knowledge discovery
 - 🌐 **API.md** - REST API documentation and examples
 
 **Can't wait to start the app?** Browse the documentation notes directly on GitHub in the [`data/notes/`](data/notes/) folder!

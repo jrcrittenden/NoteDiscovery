@@ -25,6 +25,14 @@
 - **Click to navigate** - Jump between notes seamlessly
 - **External links** - Open in new tabs automatically
 
+### Graph Visualization
+- **Interactive network** - Visual map of all notes and connections
+- **Click to navigate** - Jump to any note from the graph
+- **Theme-aware** - Automatically matches your current theme
+- **Force-directed layout** - Organic, readable node positioning
+- **Zoom & pan** - Explore large knowledge bases easily
+- **Connection insights** - See hub notes, orphans, and clusters
+
 ### Direct URLs
 - **Deep linking** - Open specific notes via URL (e.g., `/folder/note`)
 - **Search highlighting** - Add `?search=term` to highlight specific content
@@ -93,6 +101,7 @@
 | `F3` | `F3` | Next search match |
 | `Shift+F3` | `Shift+F3` | Previous search match |
 | `Ctrl+Drag` | `Cmd+Drag` | Create internal link |
+| `Esc` | `Esc` | Close graph view |
 
 ## 🚀 Performance
 
